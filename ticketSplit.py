@@ -1,496 +1,718 @@
-import requests
-from lxml import html 
-from pyquery import PyQuery
-import  urllib
-import datetime
+# .-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-.
+# |                                                                                               |
+# |       - This is originally ticketsplit by "https://github.com/gmoutsin/ticketsplit"           |
+# |             -- I forked it because it was outdated python 2 code and started                  |
+# |             -- to work on improving it and making it free to run for myself.                  |
+# |             -- This is an old version, I'm just working on the new one atm                    | 
+# |             -- and will commit when it's done.                                                |
+# |                                                                                               |
+# |       New features: HTML, Indexing, 100% free, multiple search methods, easy buy and more     |
+# `-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-'
+
+# V2.0.0 - Modernised code and updated python terminology and identifiers. This version is not 100% functional, more to come soon.
+
+from __future__ import annotations
+
+
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
+from typing import Any, Protocol
+from urllib.parse import quote, urlencode
+
+import argparse
 import re
+import sys
+
+try:
+    import requests
+except ImportError:  # checked for dependencies
+    requests = None 
+
+try:
+    from pyquery import PyQuery as PQ
+except ImportError:  # only used when dependencies are missing 
+    PQ = Any  # ignore[misc, assignment]
+
+
+OFFICIAL_JOURNEY_PLANNER_URL = "https://www.nationalrail.co.uk/journey-planner/"
+
+# Free/registration-based official data sources for a proper non-scraping version.
+NATIONAL_RAIL_DATA_PORTAL_URL = "https://opendata.nationalrail.co.uk/"
+RAIL_DATA_MARKETPLACE_URL = "https://raildata.org.uk/"
+
+# LEGACY_OJP_SCRAPER_BASE_URL = "https://ojp.nationalrail.co.uk" - this was in the original but is old
+
+DEFAULT_ORIGIN = "BHM"
+DEFAULT_DESTINATION = "EDB"
+DEFAULT_TIME = "09:00"
+REQUEST_TIMEOUT_SECONDS = 30
 
 
 
+
+@dataclass(frozen=True)
 class Station:
-  def __init__(self,name,abbr):
-    self.name = name
-    self.abbr = abbr
-  
-  def __str__(self):
-    return(self.name + ' [' + self.abbr + ']')
-    
+    """This stores one train station and its 3-letter station code."""
+
+    name: str
+    code: str
+
+    def __str__(self) -> str:
+        return f"{self.name} [{self.code}]"
 
 
+@dataclass
 class CallingPoint:
-  def __init__(self,station,arr,dep):
-    self.station = station
-    self.arr = arr
-    self.dep = dep
-    if self.dep == '' and self.arr != '':
-      print('\nWARNING: No departure time was specified for {}, arrival time will be used.\n'.format(self.station))
-      self.dep = self.arr
-    elif self.dep != '' and self.arr == '':
-      print('\nWARNING: No arrival time was specified for {}, departure time will be used.\n'.format(self.station))
-      self.arr = self.dep
-    elif self.dep == '' and self.arr == '':
-      print('No departure or arrival time specified for {}.\nExiting...'.format(station))
-      exit()
-  
-  def __str__(self):
-    return('{:>40} {}\t{}'.format(str(self.station),str(self.arr),str(self.dep)))
-    
-  
+    """This stores a station where the train stops."""
 
+    station: Station
+    arrival: str
+    departure: str
+
+    def __post_init__(self) -> None:
+        # Some calling points only show arrival or departure.
+        # If one is missing, we copy the available time.
+        if not self.departure and self.arrival:
+            self.departure = self.arrival
+        elif self.departure and not self.arrival:
+            self.arrival = self.departure
+
+        if not self.arrival and not self.departure:
+            raise ValueError(f"No arrival or departure time for {self.station}")
+
+    def __str__(self) -> str:
+        return f"{str(self.station):>40}  arr {self.arrival:<5}  dep {self.departure:<5}"
+
+
+@dataclass
 class Route:
-  def __init__(self,stationfrom,stationto,date,dep,arr):
-    self.callingpoints = []
-    self.changes = []
-    self.fromst = stationfrom
-    self.tost = stationto
-    self.date = date
-    self.dep = dep
-    self.arr = arr
-  
-  def addCallingPoint(self,cp):
-    self.callingpoints.append(cp)
-  
-  
-  def __str__(self):
-    cpstr = 'From: {:30}\tTo:{:30}\n'.format(str(self.fromst),str(self.tost))
-    cpstr += '      {:30}\t   {:30}\n'.format(str(self.dep),str(self.arr))
-    
-    if len(self.callingpoints) > 0 :
-      cpstr += '\nCalling Points:'
-    
-    for cp in self.callingpoints:
-      cpstr += '\n' + str(cp)
-    
-    if len(self.changes) > 0:
-      cpstr += '\n\nChanges: '
-    for ch in self.changes:
-      cpstr += str(ch) + ', '
-    if len(self.changes) > 0:
-      cpstr = cpstr[:-2]
-    cpstr += '\n'
-        
-    return( cpstr )
+    """This stores the selected train route and all its calling points."""
+
+    origin: Station
+    destination: Station
+    travel_date: str
+    departure: str
+    arrival: str
+    calling_points: list[CallingPoint] = field(default_factory=list)
+    changes: list[Station] = field(default_factory=list)
+
+    def add_calling_point(self, calling_point: CallingPoint) -> None:
+        self.calling_points.append(calling_point)
+
+    def __str__(self) -> str:
+        lines = [
+            f"From: {str(self.origin):<30}  To: {str(self.destination):<30}",
+            f"      {self.departure:<30}      {self.arrival:<30}",
+        ]
+
+        if self.calling_points:
+            lines.append("\nCalling points:")
+            lines.extend(str(point) for point in self.calling_points)
+
+        if self.changes:
+            lines.append("\nChanges: " + ", ".join(str(change) for change in self.changes))
+
+        return "\n".join(lines)
 
 
+@dataclass
+class RouteStop:
+    """This is one stop in the route graph."""
 
-class RouteGraph:
-  def populateStops(self):
-    self.stops.append([self.route.fromst,self.route.dep,''])
-    tmpn = 0
-    self.routeDict[self.route.fromst] = tmpn
-    for s in self.route.callingpoints:
-      self.stops.append([s.station,s.dep,s.arr])
-      tmpn += 1
-      self.routeDict[s.station] = tmpn
-      #tmpn += 1
-    self.stops.append([self.route.tost,'',self.route.arr])
-    tmpn += 1
-    self.routeDict[self.route.tost] = tmpn
-    self.optroute.append([None,0])
-    for i in range(1,self.length):
-      self.optroute.append([None,float('inf')])
-    
-  
-  def makePriceTable(self):
-    for i in range(self.length-1):
-      self.priceTable[self.stops[i][0]] = {}
-      for j in range(i+1,self.length):
-        self.priceTable[self.stops[i][0]][self.stops[j][0]] = float('inf')
-      
-    
-    
-  
-  def __init__(self,route):
-    self.route = route
-    self.length = len(route.callingpoints) + 2
-    self.stops = []
-    self.priceTable = {}
-    self.optroute = []
-    self.routeDict = {}
-    self.populateStops()
-    self.makePriceTable()
-  
+    station: Station
+    departure: str
+    arrival: str
 
-  def __str__(self):
-    st = ''
-    for s in self.stops:
-      st += '{:>40} {:5} {:5}\n'.format( str(s[0]), str(s[1]), str(s[2]) )
-    return(st)
-  
-  def printPrices(self):
-    st = 'Ticket prices:\n      '
-    
-    for i in range(1,self.length):
-      st += '  ' + self.stops[i][0].abbr + '  '
-    st += '\n'
-    
-    
-    for i in range(self.length-1):
-      st += '  ' + self.stops[i][0].abbr
-      for k in range(i):
-        st += '  . . .'
-      for j in range(i+1,self.length):
-        st += ' {:>5} '.format(str( self.priceTable[self.stops[i][0]][self.stops[j][0]] ))
-      st += ' \n'
-    print(st)
-  
-  
-  def getPrices(self):
-    print('Fetching prices...')
-    print('Progress: {:2}/{}'.format(0,self.length-1))
-    for i in range(self.length-1):
-      timestr = self.stops[i][1]
-      time = timestr.replace(':','')
-      tempmin = int(time[2:])
-      temphour = int(time[:2])
-      if tempmin < 5:
-        strmin = '{}'.format(tempmin + 55)
-        strhour = '{}'.format(temphour - 1)
-        if len(strmin) == 1:
-          strmin = '0' + strmin
-        if len(strhour) == 1:
-          strhour = '0' + strhour
-        time = strhour + strmin
-      else:
-        strmin = '{}'.format(tempmin - 5)
-        strhour = '{}'.format(temphour)
-        if len(strmin) == 1:
-          strmin = '0' + strmin
-        if len(strhour) == 1:
-          strhour = '0' + strhour
-        time = strhour + strmin
-      
-      
-      for j in range(i+1,self.length):
-        url = 'http://ojp.nationalrail.co.uk/service/timesandfares/' + self.stops[i][0].abbr + '/' + self.stops[j][0].abbr + '/' + self.route.date + '/' + time + '/dep'
-        #print(url)
-        rsp = requests.get(url)
-        prdoc = PyQuery(rsp.content)
-        sres = prdoc('div#ctf-results table#oft tbody tr td.dep').filter(lambda i: PyQuery(this).text() == timestr ).parent()
-        
-        
-        if len(sres) > 1:
-          print('{} trains were matched. URL: {}'.format(len(sres),url))
-          rowtmp = PyQuery( sres )
-          temptrip = rowtmp('td.arr').filter(lambda i: PyQuery(this).text() == self.stops[j][2] ).parent()
-          if len(temptrip) == 1:
-            price = float(temptrip.find('td.fare label').text()[1:])
-            print('Arrival time matched. Price: {}'.format(price))
-          elif len(temptrip) > 1:
-            print("Arrival time couldn't be matched. Choose manually.")
-            temptrip = chooseTrip(session,url)
-            price = float(temptrip.find('td.fare label').text()[1:])
-          else:
-            print('No trains were found. Exiting...')
-            exit()
-        elif len(sres) ==0 :
-          print('No trains were matched. URL: {}'.format(url))
-          if manualChoice:
-            temptrip = chooseTrip(session,url)
-            price = float(temptrip.find('td.fare label').text()[1:])
-          else:
-            sres = prdoc('div#ctf-results table#oft tbody tr td.dep').parent()
-            for k in range(len(sres)):
-              tm = sres.children('td.dep').eq(k).text()
-              if int(tm.replace(':','')) > int(timestr.replace(':','')) :
-                break
-            try:
-              price = float(sres.children('td.dep').eq(k).parent().find('td.fare label').text()[1:])
-            except:
-              print('Unforseen error\n')
-              print(url)
-              exit()
-            print('The train leaving at {} was chosen with price {}.'.format(tm,price))
-        else:
-          rowtmp = PyQuery( sres )
-          price = float(sres('td.fare label').text()[1:])
-          
-        self.priceTable[self.stops[i][0]][self.stops[j][0]] = price
-      print('Progress: {:2}/{}'.format(i + 1,self.length-1))
-    print('')
-  
-  
-  def getOptRoute(self):
-    for i in range(self.length-1):
-      for j in range(i+1,self.length):
-        if self.priceTable[self.stops[i][0]][self.stops[j][0]] +  self.optroute[i][1]  < self.optroute[j][1]:
-          self.optroute[j][0] = self.stops[i][0]
-          self.optroute[j][1] = self.priceTable[self.stops[i][0]][self.stops[j][0]] + self.optroute[i][1]
-  
-  
-  def printOptRoutes(self):
-    st = ''
-    for i in range(self.length):
-      st += '{:30} {:30} {}\n'.format( str( self.stops[i][0] ) , str( self.optroute[i][0] ) , str( self.optroute[i][1] ) )
-    print(st)
-  
-  
-  def printOptRoute(self):
-    tmpLst = []
-    tmpN = self.routeDict[self.optroute[-1][0]]
-    tmpLst.append(tmpN)
-    while self.optroute[tmpN][0] != None:
-      tmpN = self.routeDict[self.optroute[tmpN][0]]
-      tmpLst.append(tmpN)
-    tmpLst = tmpLst[:-1][::-1]
-    if len(tmpLst)==0:
-      print('The direct ticket is cheaper.')
-      return
-    tmpstr = 'Cheapest combination:\n'
-    tmpstr += 'From: {:30} {:5}'.format(str(self.route.fromst),str(self.route.dep))
-    for i in range(len(tmpLst)):
-      if i == 0:
-        prstation = self.route.fromst
-      else:
-        prstation = self.route.callingpoints[tmpLst[i-1]-1].station
-      
-      tmpstr += '\tTo: {:30}{:5}\t\tPrice:{:>5}\n'.format(str(self.route.callingpoints[tmpLst[i]-1].station),str(self.route.callingpoints[tmpLst[i]-1].arr),self.priceTable[prstation][self.route.callingpoints[tmpLst[i]-1].station])
-      tmpstr += 'From: {:30} {:5}'.format(str(self.route.callingpoints[tmpLst[i]-1].station),str(self.route.callingpoints[tmpLst[i]-1].dep))
-    tmpstr += '\tTo: {:30}{:5}\t\tPrice:{:>5}\n'.format(str(self.route.tost),str(self.route.arr),self.priceTable[self.route.callingpoints[tmpLst[i]-1].station][self.route.tost])
-    
-    tmpstr += 'Total cost: {}'.format(self.optroute[-1][1])
-    
-    print(tmpstr)
-      
-    
-    
-    
 
-def chooseTrip(ses,url):
-  respPQ = PyQuery(ses.get(url).content)
-  tttrips = respPQ('div#ctf-results table#oft tbody tr td.dep').parent()
-  if len(tttrips) > 1:
-    print( '{} trains were found.'.format(len(tttrips)) )
-    print( '    {:7} {:5} {:5} {:7} {:7} {:3} {:7}'.format('Dep:','From:','To:','Arr:','Dur:','Chg:','Price:') )
-    for i in range(len(tttrips)):
-      print(
-        '{:2}: {:7} {:5} {:5} {:7} {:7} {:3} {:>7}'.format(i+1,
-                                                          tttrips.eq(i).find('td.dep').text(),
-                                                          tttrips.eq(i).find('td.from abbr').text(),
-                                                          tttrips.eq(i).find('td.to abbr').text(),
-                                                          tttrips.eq(i).find('td.arr').text(),
-                                                          tttrips.eq(i).find('td.dur').text().replace(' ',''),
-                                                          tttrips.eq(i).find('td.chg').text(),
-                                                          tttrips.eq(i).find('td.fare div label').text()[1:]
-                                                          )
+@dataclass
+class SplitSegment:
+    """This is one ticket segment in the cheapest split plan."""
+
+    start_index: int
+    end_index: int
+    price: float
+
+
+class NationalRailPrototypeClient:
+    """
+    This fetches train pages and prices.
+
+    This is only a prototype scraper. Later, replace this class with official
+    fares and timetable data.
+    """
+
+    def __init__(self, manual_choice: bool = False) -> None:
+        self.session = requests.Session()
+        self.manual_choice = manual_choice
+
+        # This avoids fetching the same fare twice.
+        self.price_cache: dict[tuple[str, str, str, str, str], float] = {}
+
+    def journey_url(self, origin: str, destination: str, travel_date: str, time: str) -> str:
+        """This builds a National Rail journey planner URL."""
+
+        return (
+            f"{BASE_URL}/service/timesandfares/"
+            f"{origin}/{destination}/{travel_date}/{time}/dep"
         )
-    print('URL: ' + url)
-    inp = ''
-    while inp == '':
-      inp = raw_input('Choose trip: ')
-    k = int(inp)-1
-    if k not in set(range(len(tttrips))):
-      print('Invalid argument. Exiting...')
-      exit()
-    print('')
-    return( PyQuery(tttrips.eq(k)) )
-  elif len(tttrips) == 1:
-    return( PyQuery(tttrips) )
-  else:
-    print('No trains found. Exiting...')
-    exit()    
-    
-    
 
+    def get_page(self, url: str) -> PQ:
+        """This downloads a page and converts it into queryable HTML."""
 
+        response = self.session.get(url, timeout=30)
+        response.raise_for_status()
+        return PQ(response.content)
 
+    def journey_rows(self, page: PQ) -> list[PQ]:
+        """This finds journey rows in the search results table."""
 
+        return list(page("div#ctf-results table#oft tbody tr").items())
 
+    def choose_trip(self, url: str) -> PQ:
+        """This asks the user to choose one journey from the journey results."""
 
+        page = self.get_page(url)
+        rows = self.journey_rows(page)
 
+        if not rows:
+            raise RuntimeError(f"No trains found. URL: {url}")
 
+        if len(rows) == 1:
+            return rows[0]
 
+        print(f"{len(rows)} trains were found.")
+        print(f"{'No.':<4} {'Dep':<7} {'From':<7} {'To':<7} {'Arr':<7} {'Dur':<8} {'Chg':<4} {'Price':>8}")
 
+        for index, row in enumerate(rows, start=1):
+            print(
+                f"{index:<4} "
+                f"{text(row, 'td.dep'):<7} "
+                f"{text(row, 'td.from abbr'):<7} "
+                f"{text(row, 'td.to abbr'):<7} "
+                f"{text(row, 'td.arr'):<7} "
+                f"{text(row, 'td.dur').replace(' ', ''):<8} "
+                f"{text(row, 'td.chg'):<4} "
+                f"{price_text(row):>8}"
+            )
+
+        print(f"URL: {url}")
+
+        while True:
+            choice = input("Choose trip number: ").strip()
+
+            if choice.isdigit():
+                index = int(choice) - 1
+
+                if 0 <= index < len(rows):
+                    print("")
+                    return rows[index]
+
+            print("Invalid choice. Try again.")
+
+    def fetch_selected_route(self, origin: str, destination: str, travel_date: str, time: str) -> Route:
+        """This gets one selected route and its calling points."""
+
+        url = self.journey_url(origin, destination, travel_date, time)
+        trip = self.choose_trip(url)
+
+        details_href = trip("td.info a").attr("href")
+
+        if not details_href:
+            raise RuntimeError("Could not find journey details link.")
+
+        route = Route(
+            origin=Station(
+                clean_station_name(text(trip, "td.from")),
+                text(trip, "td.from abbr"),
+            ),
+            destination=Station(
+                clean_station_name(text(trip, "td.to")),
+                text(trip, "td.to abbr"),
+            ),
+            travel_date=travel_date,
+            departure=text(trip, "td.dep"),
+            arrival=text(trip, "td.arr"),
+        )
+
+        details_url = quote(f"{BASE_URL}{details_href}", safe="/:?&=")
+        details_page = self.get_page(details_url)
+
+        changes_text = details_page("table#journey tbody td.changes").text().strip()
+        number_of_legs = int(changes_text or "0") + 1
+
+        legs = list(
+            details_page(
+                "div.journey-details table#journeyLegDetails tbody tr td.method"
+            ).parent().items()
+        )
+
+        calling_point_tables = list(
+            details_page(
+                "div.journey-details table#journeyLegDetails "
+                "tbody tr.callingpoints div.callingpointslide table tbody"
+            ).items()
+        )
+
+        for leg_index in range(number_of_legs):
+            if leg_index < len(calling_point_tables):
+                self._add_leg_calling_points(route, calling_point_tables[leg_index])
+
+            if leg_index != number_of_legs - 1 and leg_index + 1 < len(legs):
+                self._add_change_point(route, legs[leg_index], legs[leg_index + 1])
+
+        return route
+
+    def _add_leg_calling_points(self, route: Route, table: PQ) -> None:
+        """This adds all calling points for one leg of the journey."""
+
+        for row in table("tr").items():
+            station_code = text(row, "td.calling-points a abbr")
+            station_name = clean_station_name(text(row, "td.calling-points a"))
+
+            if not station_code or not station_name:
+                continue
+
+            route.add_calling_point(
+                CallingPoint(
+                    station=Station(station_name, station_code),
+                    arrival=text(row, "td.arrives"),
+                    departure=text(row, "td.departs"),
+                )
+            )
+
+    def _add_change_point(self, route: Route, current_leg: PQ, next_leg: PQ) -> None:
+        """This adds a change station between two legs."""
+
+        station = Station(
+            clean_station_name(text(current_leg, "td.destination a")),
+            text(current_leg, "td.destination a abbr"),
+        )
+
+        route.changes.append(station)
+        route.add_calling_point(
+            CallingPoint(
+                station=station,
+                arrival=text(current_leg, "td.arriving"),
+                departure=text(next_leg, "td.leaving"),
+            )
+        )
+
+    def fetch_price(
+        self,
+        origin: Station,
+        destination: Station,
+        travel_date: str,
+        departure_time: str,
+        expected_arrival: str,
+    ) -> float:
+        """
+        This finds the cheapest visible price between two stations.
+
+        It tries to match the same departure time first, then the same arrival time.
+        """
+
+        cache_key = (
+            origin.code,
+            destination.code,
+            travel_date,
+            departure_time,
+            expected_arrival,
+        )
+
+        if cache_key in self.price_cache:
+            return self.price_cache[cache_key]
+
+        search_time = five_minutes_before(departure_time)
+        url = self.journey_url(origin.code, destination.code, travel_date, search_time)
+
+        page = self.get_page(url)
+        rows = self.journey_rows(page)
+
+        matching_rows = [
+            row for row in rows
+            if text(row, "td.dep") == departure_time
+        ]
+
+        if len(matching_rows) > 1:
+            arrival_matches = [
+                row for row in matching_rows
+                if text(row, "td.arr") == expected_arrival
+            ]
+
+            if len(arrival_matches) == 1:
+                selected_row = arrival_matches[0]
+            elif self.manual_choice:
+                selected_row = self.choose_trip(url)
+            else:
+                selected_row = matching_rows[0]
+
+        elif len(matching_rows) == 1:
+            selected_row = matching_rows[0]
+
+        elif self.manual_choice:
+            selected_row = self.choose_trip(url)
+
+        else:
+            selected_row = first_train_after(rows, departure_time)
+
+        price = parse_price(price_text(selected_row))
+        self.price_cache[cache_key] = price
+
+        return price
+
+
+class SplitFareFinder:
+    """This compares direct fare vs split-ticket fares."""
+
+    def __init__(self, route: Route, client: NationalRailPrototypeClient) -> None:
+        self.route = route
+        self.client = client
+        self.stops = self._build_stops()
+
+        # This stores prices between every possible pair of stops.
+        self.price_table: dict[tuple[int, int], float] = {}
+
+        # These are used by the cheapest-price algorithm.
+        self.previous_stop: list[Optional[int]] = [None] * len(self.stops)
+        self.cheapest_costs: list[float] = [float("inf")] * len(self.stops)
+        self.cheapest_costs[0] = 0.0
+
+    def _build_stops(self) -> list[RouteStop]:
+        """This builds the route graph from origin, calling points and destination."""
+
+        stops = [
+            RouteStop(
+                station=self.route.origin,
+                departure=self.route.departure,
+                arrival=self.route.departure,
+            )
+        ]
 
+        for point in self.route.calling_points:
+            stops.append(
+                RouteStop(
+                    station=point.station,
+                    departure=point.departure,
+                    arrival=point.arrival,
+                )
+            )
 
+        stops.append(
+            RouteStop(
+                station=self.route.destination,
+                departure=self.route.arrival,
+                arrival=self.route.arrival,
+            )
+        )
 
-travelFrom = 'BHM'
-travelTo = 'EDB'
-traveltime = '09:00'
+        return stops
 
-today = datetime.date.today()
+    def fetch_all_prices(self) -> None:
+        """This gets the fare for every valid pair of stops."""
 
-year = ('{}'.format(today.year))[2:]
-month = '{:02d}'.format(today.month)
-day = '{:02d}'.format(today.day)
+        total_steps = len(self.stops) - 1
 
+        print("Fetching prices...")
+        print(f"Progress: 0/{total_steps}")
 
+        for start_index in range(len(self.stops) - 1):
+            start_stop = self.stops[start_index]
 
-date = '{}/{}/{}'.format(day,month,year)
+            for end_index in range(start_index + 1, len(self.stops)):
+                end_stop = self.stops[end_index]
 
+                price = self.client.fetch_price(
+                    origin=start_stop.station,
+                    destination=end_stop.station,
+                    travel_date=self.route.travel_date,
+                    departure_time=start_stop.departure,
+                    expected_arrival=end_stop.arrival,
+                )
 
+                self.price_table[(start_index, end_index)] = price
 
-theday = today + datetime.timedelta(7)
-year = ('{}'.format(theday.year))[2:]
-month = '{:02d}'.format(theday.month)
-day = '{:02d}'.format(theday.day)
-date = '{}/{}/{}'.format(day,month,year)
+            print(f"Progress: {start_index + 1}/{total_steps}")
 
+        print("")
 
+    def find_cheapest_split(self) -> list[SplitSegment]:
+        """This uses dynamic programming to find the cheapest ticket combination."""
 
+        for start_index in range(len(self.stops) - 1):
+            for end_index in range(start_index + 1, len(self.stops)):
+                price = self.price_table[(start_index, end_index)]
+                new_cost = self.cheapest_costs[start_index] + price
 
-print('Travelling from (type the 3 letter abbrevation for the station, press enter for {}): '.format(travelFrom))
-inp = raw_input()
+                if new_cost < self.cheapest_costs[end_index]:
+                    self.cheapest_costs[end_index] = new_cost
+                    self.previous_stop[end_index] = start_index
 
-if inp!= '':
-  travelFrom = inp
+        return self._rebuild_segments()
 
+    def _rebuild_segments(self) -> list[SplitSegment]:
+        """This rebuilds the best split-ticket path after dynamic programming."""
 
+        segments: list[SplitSegment] = []
+        end_index = len(self.stops) - 1
 
-print('Travelling to (type the 3 letter abbrevation for the station, press enter for {}): '.format(travelTo))
-inp = raw_input()
+        while self.previous_stop[end_index] is not None:
+            start_index = self.previous_stop[end_index]
+            price = self.price_table[(start_index, end_index)]
 
-if inp!= '':
-  travelTo = inp
+            segments.append(
+                SplitSegment(
+                    start_index=start_index,
+                    end_index=end_index,
+                    price=price,
+                )
+            )
 
+            end_index = start_index
 
-print('Travelling date (press enter for next week, {}, type the date that you want or type +n to search n days after today):'.format(date))
-inp = raw_input()
+        segments.reverse()
+        return segments
 
-if inp!= '':
-  if inp[0] != '+':
-    lst = re.split(r'[ ,-]+',inp)
-    day = lst[0]
-    try:
-      month = lst[1]
-    except:
-      pass
-    try:
-      year = lst[2]
-    except:
-      pass
-    month = '{:02d}'.format(int(month))
-    date = '{}/{}/{}'.format(day,month,year)
-  else:
-    theday = today + datetime.timedelta(int(inp[1:]))
-    year = ('{}'.format(theday.year))[2:]
-    month = '{:02d}'.format(theday.month)
-    day = '{:02d}'.format(theday.day)
-    date = '{}/{}/{}'.format(day,month,year)
-    print('{}'.format(date))
+    def print_price_table(self) -> None:
+        """This prints all checked ticket prices."""
 
-  
+        print("Ticket prices:")
 
-inp = raw_input('Travelling time (press enter for {}): '.format(traveltime))
+        header = "      " + "".join(
+            f"{stop.station.code:>8}"
+            for stop in self.stops[1:]
+        )
 
+        print(header)
 
+        for start_index, start_stop in enumerate(self.stops[:-1]):
+            row = f"{start_stop.station.code:>5}"
 
+            for _ in range(start_index):
+                row += f"{'.':>8}"
 
-if inp!= '':
-  if len(inp) <= 2:
-    traveltime = '{:02d}:00'.format(int(inp))
-  else:
-    traveltime = inp
+            for end_index in range(start_index + 1, len(self.stops)):
+                price = self.price_table.get((start_index, end_index), float("inf"))
+                row += f"{price:>8.2f}"
 
+            print(row)
 
+        print("")
 
+    def print_cheapest_plan(self, segments: list[SplitSegment]) -> None:
+        """This prints the final cheapest split-ticket plan."""
 
+        direct_price = self.price_table[(0, len(self.stops) - 1)]
+        split_price = self.cheapest_costs[-1]
 
+        print("Result:")
+        print(f"Direct ticket: £{direct_price:.2f}")
+        print(f"Cheapest found: £{split_price:.2f}")
+        print(f"Saving: £{direct_price - split_price:.2f}")
+        print("")
 
+        if len(segments) <= 1:
+            print("The direct ticket is cheapest.")
+            return
 
-print('\n\n\n')
+        print("Cheapest split combination:")
 
+        for segment in segments:
+            start_stop = self.stops[segment.start_index]
+            end_stop = self.stops[segment.end_index]
 
+            print(
+                f"- {start_stop.station} {start_stop.departure} "
+                f"to {end_stop.station} {end_stop.arrival}: "
+                f"£{segment.price:.2f}"
+            )
 
 
+def text(row: PQ, selector: str) -> str:
+    """This safely extracts text from one HTML row."""
 
-date = date.replace('/','')
-traveltime = traveltime.replace(':','')
+    return row(selector).text().strip()
 
 
+def price_text(row: PQ) -> str:
+    """This extracts the visible ticket price text."""
 
+    return text(row, "td.fare label") or text(row, "td.fare div label")
 
 
+def parse_price(raw_price: str) -> float:
+    """This converts a price like £42.30 into a float."""
 
-manualChoice = False
+    match = re.search(r"([0-9]+(?:\.[0-9]{1,2})?)", raw_price)
 
+    if not match:
+        raise ValueError(f"Could not parse price from: {raw_price!r}")
 
+    return float(match.group(1))
 
 
+def clean_station_name(raw_name: str) -> str:
+    """This removes the station code from names like Birmingham [BHM]."""
 
-url = 'http://ojp.nationalrail.co.uk/service/timesandfares/{}/{}/{}/{}/dep'.format(travelFrom,travelTo,date,traveltime)
+    return raw_name.split("[")[0].strip()
 
-session = requests.session()
 
-response = session.get(url)
-doc = PyQuery(response.content)
+def first_train_after(rows: list[PQ], departure_time: str) -> PQ:
+    """This chooses the first train after the requested departure time."""
 
+    wanted = time_to_minutes(departure_time)
 
+    for row in rows:
+        row_time = text(row, "td.dep")
 
+        if row_time and time_to_minutes(row_time) >= wanted:
+            print(
+                f"No exact train match. Chose train leaving at {row_time} "
+                f"with price {price_text(row)}."
+            )
+            return row
 
+    if not rows:
+        raise RuntimeError("No train rows found.")
 
+    return rows[-1]
 
-trip = chooseTrip(session,url)
 
+def five_minutes_before(time_text: str) -> str:
+    """This subtracts 5 minutes because the search page may need an earlier search time."""
 
-nexturl = trip('td.info a').attr['href']
+    total_minutes = max(time_to_minutes(time_text) - 5, 0)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
 
+    return f"{hours:02d}{minutes:02d}"
 
-r = Route( Station(trip('td.from').text().split('[')[0].strip(),trip('td.from abbr').text()) ,
-          Station(trip('td.to').text().split('[')[0].strip(),trip('td.to abbr').text()) ,
-          date ,
-          trip('td.dep').text() ,
-          trip('td.arr').text() )
 
+def time_to_minutes(time_text: str) -> int:
+    """This converts HH:MM into minutes after midnight."""
 
+    hours, minutes = time_text.split(":")
+    return int(hours) * 60 + int(minutes)
 
-url = 'http://ojp.nationalrail.co.uk' + nexturl
 
+def parse_time_input(raw_time: str, default: str = DEFAULT_TIME) -> str:
+    """This normalises user time input into HH:MM."""
 
+    raw_time = raw_time.strip()
 
-url = urllib.quote(url, safe='/:')
+    if not raw_time:
+        return default
 
+    if raw_time.isdigit() and len(raw_time) <= 2:
+        return f"{int(raw_time):02d}:00"
 
+    if re.fullmatch(r"\d{3,4}", raw_time):
+        raw_time = raw_time.zfill(4)
+        return f"{raw_time[:2]}:{raw_time[2:]}"
 
-response = session.get(url)
-doc = PyQuery(response.content)
+    return raw_time
 
 
+def default_travel_date() -> date:
+    """This returns next week's date."""
 
-legsnum = int(doc('table#journey tbody td.changes').text()) + 1
+    return date.today() + timedelta(days=7)
 
-legs = doc('div.journey-details table#journeyLegDetails tbody tr td.method').parent()
-callpointtabs = doc('div.journey-details table#journeyLegDetails tbody tr.callingpoints div.callingpointslide table tbody')
 
-for i in range(legsnum):
-  cps = callpointtabs.eq(i).find('tr')
-  for cp in cps:
-    cppq = PyQuery(cp)
-    r.addCallingPoint( CallingPoint( Station(cppq('td.calling-points a').text().split('[')[0].strip(),cppq('td.calling-points a abbr').text()),cppq('td.arrives').text(),cppq('td.departs').text()) )
-  
-  if i != legsnum - 1:
-    lrt = PyQuery(legs[i]) 
-    lrn = PyQuery(legs[i+1])
-    tmpst = Station(lrt('td.destination a').text().split('[')[0].strip() , lrt('td.destination a abbr').text() )
-    r.changes.append(tmpst)
-    r.addCallingPoint( CallingPoint( tmpst  , lrt('td.arriving').text() , lrn('td.leaving').text() ) )
-    
-  
+def parse_date_input(raw_date: str) -> str:
+    """
+    This converts date input into National Rail format DDMMYY.
 
+    Accepted examples:
+    - empty input = next week
+    - +7 = seven days from today
+    - 01 07 26
+    - 01/07/26
+    - 01-07-2026
+    """
 
+    raw_date = raw_date.strip()
 
+    if not raw_date:
+        return format_national_rail_date(default_travel_date())
 
+    if raw_date.startswith("+"):
+        return format_national_rail_date(
+            date.today() + timedelta(days=int(raw_date[1:]))
+        )
 
+    parts = re.split(r"[ /,\-]+", raw_date)
 
+    if len(parts) < 2:
+        raise ValueError("Date must include at least day and month.")
 
+    day = int(parts[0])
+    month = int(parts[1])
+    year = int(parts[2]) if len(parts) > 2 else date.today().year
 
+    if year < 100:
+        year += 2000
 
+    return f"{day:02d}{month:02d}{str(year)[2:]}"
 
-print(r)
 
+def format_national_rail_date(value: date) -> str:
+    """This formats a date as DDMMYY."""
 
+    return value.strftime("%d%m%y")
 
-rg = RouteGraph(r)
 
+def prompt_with_default(label: str, default: str) -> str:
+    """This asks the user for a value, using a default if they press Enter."""
 
+    user_input = input(f"{label} [{default}]: ").strip()
+    return user_input or default
 
-rg.getPrices()
 
-rg.printPrices()
+def main() -> None:
+    """This is the main script to compare direct fares with split-ticket fares."""
 
-rg.getOptRoute()
+    print("SplitFare prototype")
+    print("This script compares direct rail tickets with split-ticket combinations.")
+    print("")
 
-#rg.printOptRoutes()
+    origin = prompt_with_default("Travelling from station code", DEFAULT_ORIGIN).upper()
+    destination = prompt_with_default("Travelling to station code", DEFAULT_DESTINATION).upper()
 
-rg.printOptRoute()
+    default_date = format_national_rail_date(default_travel_date())
+    raw_date = input(f"Travelling date, or +n days from today [{default_date}]: ")
+    travel_date = parse_date_input(raw_date)
 
+    raw_time = input(f"Travelling time [{DEFAULT_TIME}]: ")
+    travel_time = parse_time_input(raw_time)
+
+    # National Rail URL wants time as HHMM, not HH:MM.
+    search_time = travel_time.replace(":", "")
+
+    print("")
+    print(f"Searching {origin} to {destination} on {travel_date} at {travel_time}")
+    print("")
+
+    client = NationalRailPrototypeClient(manual_choice=False)
+
+    route = client.fetch_selected_route(
+        origin=origin,
+        destination=destination,
+        travel_date=travel_date,
+        time=search_time,
+    )
+
+    print(route)
+    print("")
+
+    finder = SplitFareFinder(route, client)
+
+    finder.fetch_all_prices()
+    finder.print_price_table()
+
+    segments = finder.find_cheapest_split()
+    finder.print_cheapest_plan(segments)
+
+
+if __name__ == "__main__":
+    main()
