@@ -1,0 +1,47 @@
+{
+  "splitfare.version": "2.3.1",
+  "project": {
+    "name": "ticketsplit (fork)",
+    "original_repository": "https://github.com/gmoutsin/ticketsplit",
+    "status": "in development",
+    "maintainer_note": "Forked from outdated Python 2 codebase. Modernised for personal use. Optimised and improved for release"
+  },
+  "description": "Modernised version of ticketsplit with updated Python terminology and identifiers. This is an early release and not fully functional.",
+  "features": [
+    "HTML support",
+    "Indexing",
+    "100% free to run",
+    "Multiple search methods",
+    "Easy buy flow (planned/partial)"
+  ],
+ "changelog": {
+    "v2.0.0": [
+      "Modernised codebase",
+      "Updated Python terminology and identifiers",
+      "Partial functionality improvements"
+          ]
+  },
+   "changelog": {
+    "v2.1.0": [
+      "Huge QOL improvements and improved code"
+    ]
+  }, 
+ "changelog": {
+    "v2.1.1": [
+      "Split files"
+    ]
+  }, 
+ "changelog": {
+    "v2.2.0": [
+      "Added web functionality and dependencies, another way to price search (scraping and free API)"
+    ]
+  },
+   "changelog": {
+    "v2.3.1": [
+    "Indexing",
+    "100% free to run",
+    "Multiple search methods",
+    ]
+  },
+  "notes": "This version is an early build and is still under active development. More features and fixes are planned."
+}
