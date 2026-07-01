@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SplitFare UK · Results</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="page">
+        <section class="hero compact">
+            <div>
+                <p class="eyebrow">results</p>
+                <h1>Cheapest found: {{ result.total }}</h1>
+                <p class="subtext">
+                    Source: {{ result.source }} · Best time: {{ result.departure_time }} · Railcard: {{ result.railcard }}
+                </p>
+            </div>
+            <a class="button-link" href="/">New search</a>
+        </section>
+
+        {% if result.notes %}
+            {% for note in result.notes %}
+                <div class="alert muted">{{ note }}</div>
+            {% endfor %}
+        {% endif %}
+
+        <section class="summary-grid">
+            <div class="summary-card">
+                <span>Direct ticket</span>
+                <strong>{{ result.direct.price }}</strong>
+                <p>{{ result.direct.ticket_name }}</p>
+                <a href="{{ result.direct.buy_url }}" target="_blank" rel="noopener">Check / buy direct</a>
+            </div>
+
+            <div class="summary-card">
+                <span>Split total</span>
+                <strong>{{ result.total }}</strong>
+                <p>Saving: {{ result.saving }}</p>
+            </div>
+
+            <div class="summary-card">
+                <span>Indexed times</span>
+                <strong>{{ result.checked_times | join(', ') }}</strong>
+                <p>Window: {{ result.index_minutes }} minutes</p>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Tickets to check or buy</h2>
+            <div class="segments">
+                {% for segment in result.segments %}
+                    <article class="segment">
+                        <div>
+                            <h3>{{ segment.origin }} → {{ segment.destination }}</h3>
+                            <p>{{ segment.ticket_name }}{% if segment.route %} · {{ segment.route }}{% endif %}</p>
+                            <small>{{ segment.notes }}</small>
+                        </div>
+                        <div class="price-box">
+                            <strong>{{ segment.price }}</strong>
+                            <a href="{{ segment.buy_url }}" target="_blank" rel="noopener">Check / buy</a>
+                            {% if segment.check_url %}
+                                <a href="{{ segment.check_url }}" target="_blank" rel="noopener">Source</a>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="notes">
+            <p>
+                This app does not sell tickets. The links take you to National Rail or the selected data source
+                so you can check live availability and complete purchase there.
+            </p>
+        </section>
+    </main>
+</body>
+</html>
