@@ -9,7 +9,7 @@
 # |       New features: HTML, Indexing, 100% free, multiple search methods, easy buy and more     |
 # `-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-'
 
-# V2.0.0 - Modernised code and updated python terminology and identifiers. This version is not 100% functional, more to come soon.
+# V2.3.1 - Modernised code and updated python terminology and identifiers. This version is not 100% functional, more to come soon.
 
 from __future__ import annotations
 from dataclasses import dataclass
