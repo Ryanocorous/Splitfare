@@ -14,35 +14,27 @@
     "Multiple search methods",
     "Easy buy flow (planned/partial)"
   ],
- "changelog": {
+  "changelog": {
     "v2.0.0": [
       "Modernised codebase",
       "Updated Python terminology and identifiers",
       "Partial functionality improvements"
-          ]
-  },
-   "changelog": {
+    ],
     "v2.1.0": [
       "Huge QOL improvements and improved code"
-    ]
-  }, 
- "changelog": {
+    ],
     "v2.1.1": [
       "Split files"
-    ]
-  }, 
- "changelog": {
+    ],
     "v2.2.0": [
       "Added web functionality and dependencies, another way to price search (scraping and free API)"
-    ]
-  },
-   "changelog": {
+    ],
     "v2.3.1": [
-    "Indexing",
-    "100% free to run",
-    "Multiple search methods",
-       "-- Accidentally added some of the py files into html due to clipboard not copying and me not checking, whoops"
+      "Indexing",
+      "100% free to run",
+      "Multiple search methods"
     ]
   },
   "notes": "This version is an early build and is still under active development. More features and fixes are planned."
 }
+
