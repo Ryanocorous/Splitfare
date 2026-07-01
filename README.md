@@ -1,19 +1,4 @@
-# ticketsplit
-
-This script takes advantage of the way the rail tickets are priced in UK and finds the cheapest splitting. If you don't know what is ticket splitting and you live in UK, you should google it.
-
-The script was written for Python 2 and requires the following modules: requests, lxml, pyquery, urllib, datetime, re.
-
-Python 2 was chosen because I couldn't make pyquery work in Python 3.
-
-In order to use the script you need to go to a website for booking tickets. There you can see the abbreviation of the departure and arrival stations. For example the abbriviation of Birmingham New Street is BHM.
-
-Once you have these, run the script. You need to enter the abbreviation of the 2 stations. This can upper case or lower case letters. Then you need to add the date in the form DD/MM/YYYY or just type +X to search for X days later. Finally you need to specify the time by writting HH:MM or just HH.
-
-Then you will have the choice of 5 different choices and by choosing one the script will run and eventually return the cheapest combination. The data used are taken from the website of National Rail which means of course that if the website changes layout the script will be broken.
-
-
-A typical output of the script looks like this:
+Will be updated soon!
 
 
 ```
