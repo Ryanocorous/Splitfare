@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SplitFare UK</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="page">
+        <section class="hero">
+            <div>
+                <p class="eyebrow">UK rail split-ticket prototype</p>
+                <h1>SplitFare UK</h1>
+                <p class="subtext">
+                    Compare direct tickets with split combinations. Use BR Fares for reference prices,
+                    Demo for testing, or National Rail links for manual checking and purchase.
+                </p>
+            </div>
+        </section>
+
+        {% if error %}
+            <div class="alert">{{ error }}</div>
+        {% endif %}
+
+        <section class="card">
+            <form method="post" action="/search" class="form-grid">
+                <label class="full">
+                    <span>Which would you like to use?</span>
+                    <select name="source" required>
+                        {% for source in sources %}
+                            <option value="{{ source.value }}">{{ source.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    <span>From</span>
+                    <input name="origin" value="COV" maxlength="3" required>
+                </label>
+
+                <label>
+                    <span>To</span>
+                    <input name="destination" value="EUS" maxlength="3" required>
+                </label>
+
+                <label>
+                    <span>Date</span>
+                    <input name="travel_date" value="+7" required>
+                    <small>Use +7, DDMMYY, DD/MM/YY, or YYYY-MM-DD.</small>
+                </label>
+
+                <label>
+                    <span>Time</span>
+                    <input name="start_time" value="09:00" required>
+                </label>
+
+                <label class="full">
+                    <span>Calling points / split stops</span>
+                    <input name="calling_points" value="BHM,MKC" placeholder="Example: BHM,MKC">
+                    <small>The train must stop where you split. Add station codes separated by commas.</small>
+                </label>
+
+                <label>
+                    <span>Railcard</span>
+                    <select name="railcard">
+                        {% for code, label in railcards.items() %}
+                            <option value="{{ code }}">{{ label }}{% if code %} ({{ code }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    <span>Index prices for</span>
+                    <select name="index_minutes">
+                        {% for minutes in index_windows %}
+                            <option value="{{ minutes }}">{{ minutes }} minutes</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    <span>Custom minutes</span>
+                    <input name="custom_index_minutes" placeholder="Optional">
+                    <small>Overrides the preset if filled.</small>
+                </label>
+
+                <label>
+                    <span>Adults</span>
+                    <input type="number" name="adults" value="1" min="1">
+                </label>
+
+                <label>
+                    <span>Children</span>
+                    <input type="number" name="children" value="0" min="0">
+                </label>
+
+                <div class="full actions">
+                    <button type="submit">Find cheapest</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="notes">
+            <h2>Options</h2>
+            <ul>
+                <li><strong>National Rail official links:</strong> creates check/purchase links. It does not automate prices.</li>
+                <li><strong>BR Fares:</strong> uses BR Fares reference fare data and links to National Rail for buying.</li>
+                <li><strong>Demo:</strong> offline fake prices so you can test the split algorithm without internet.</li>
+            </ul>
+        </section>
+    </main>
+</body>
+</html>
