@@ -1,1 +1,261 @@
+body {
+  margin: 0;
+  background: #fff;
+  color: #1a1a1a;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
 
+a {
+  color: #b5461a;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.hero {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.hero h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.8rem;
+}
+
+.hero.compact h1 {
+  font-size: 1.4rem;
+}
+
+.subtext {
+  color: #444;
+  margin: 0;
+}
+
+.button-link {
+  color: #b5461a;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.alert {
+  padding: 0.75rem 1rem;
+  border: 1px solid #c0392b;
+  color: #c0392b;
+  margin-bottom: 1.5rem;
+}
+
+.alert.muted {
+  border-color: #ddd;
+  color: #666;
+}
+
+.alert p {
+  margin: 0;
+}
+
+.alert p + p {
+  margin-top: 0.4rem;
+}
+
+.card {
+  border: 1px solid #ddd;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.card h2,
+.notes h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.form-grid label.full {
+  grid-column: 1 / -1;
+}
+
+.form-grid input,
+.form-grid select {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.form-grid input:focus,
+.form-grid select:focus {
+  outline: 2px solid #b5461a;
+  outline-offset: 1px;
+}
+
+.form-grid small {
+  color: #777;
+  font-size: 0.8rem;
+}
+
+.form-grid .actions {
+  margin-top: 0.25rem;
+}
+
+.form-grid button {
+  width: 100%;
+  border: none;
+  padding: 0.7rem 1.25rem;
+  font-size: 1rem;
+  background: #b5461a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.form-grid button:hover {
+  background: #963a15;
+}
+
+.notes {
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.notes ul {
+  padding-left: 1.1rem;
+  margin: 0;
+}
+
+.notes li {
+  margin-bottom: 0.5rem;
+}
+
+.notes > p {
+  border-top: 1px solid #ddd;
+  padding-top: 1rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-card {
+  border: 1px solid #ddd;
+  padding: 0.9rem 1rem;
+}
+
+.summary-card span {
+  display: block;
+  color: #666;
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.summary-card strong {
+  font-size: 1.25rem;
+}
+
+.summary-card p {
+  margin: 0.2rem 0 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.summary-card a {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.segments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.segment {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #ddd;
+}
+
+.segment h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.segment p {
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.segment small {
+  color: #888;
+}
+
+.price-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.price-box strong {
+  font-size: 1.1rem;
+}
+
+.price-box a {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .segment {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .price-box {
+    align-items: flex-start;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
