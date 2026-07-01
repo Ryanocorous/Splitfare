@@ -1,0 +1,11 @@
+While this started as a fork, it's completely rewritten and contains practically none of the original code, files, or name (which was 10 years old).
+
+Instructions (Windows):
+1) Get Python (v3.12 recommended)
+2) Install pip
+  - Install dependencies in the project folder using an admin perm CMD to cd C:\X\Y\Z\splitfare - currently I added many dependencies as I plan on using many. I will     clean up later.
+  - pip install fastapi uvicorn jinja2 python-multipart requests httpxv tenacity python-dotenv pyquery lxml beautifulsoup4 pandas duckdb orjson rapidfuzz typer rich diskcache nrewebservices realtime-trains-py pytest pytest-cov ruff
+3) Open folder and run the bat file or start it yourself
+
+Linux:
+1) I assume you already know how this works. Dependencies: fastapi uvicorn jinja2 python-multipart requests httpxv tenacity python-dotenv pyquery lxml beautifulsoup4 pandas duckdb orjson rapidfuzz typer rich diskcache nrewebservices realtime-trains-py pytest pytest-cov ruff
